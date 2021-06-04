@@ -42,3 +42,4 @@ sudo systemctl enable rshim
 sudo systemctl start rshim
 
 echo "Now you can try to ssh into the bluefield with ssh ubuntu@192.168.100.2"
+echo "You might want to reboot"
