@@ -1,0 +1,139 @@
+--------THE ULTIMATE GUIDE--------
+--------Downloading the required files--------
+wget https://www.mellanox.com/downloads/ofed/MLNX_OFED-5.3-1.0.0.1/MLNX_OFED_LINUX-5.3-1.0.0.1-ubuntu18.04-x86_64.iso
+wget http://www.mellanox.com/downloads/BlueField/BFBs/Ubuntu18.04/Ubuntu18.04.3-MLNX_OFED_LINUX-UPSTREAM-LIBS-5.0-2.1.8.0.1-aarch64.bfb
+git clone https://github.com/Mellanox/rshim.git
+
+--------Updating--------
+
+sudo apt update -y && sudo apt upgrade -y
+sudo apt install linux-signed-generic-hwe-18.04
+sudo reboot --force
+sudo apt install build-essential debhelper autotools-dev dkms
+
+mount MLNX_OFED_LINUX-5.3-1.0.0.1-ubuntu18.04-x86_64.iso /mnt
+sudo /mnt/uninstall.sh --force
+sudo /mnt/mlnxofedinstall --add-kernel-support
+sudo mlxfwmanager
+/etc/init.d/openibd restart
+
+--------RSHIM Time--------
+cd rshim
+make -C /lib/modules/`uname -r`/build M=$PWD
+make -C /lib/modules/`uname -r`/build M=$PWD INSTALL_MOD_DIR=extra/rshim modules_install
+dpkg-buildpackage -us -uc -nc
+sudo dpkg -i ../rshim-dkms_*.deb
+sudo modprobe -vr rshim_usb
+sudo modprobe -vr rshim_net
+sudo modprobe -vr rshim_pcie
+
+sudo modprobe rshim_usb
+sudo modprobe rshim_net
+
+vim /etc/udev/rules.d/91-tmfifo_net.rules
+add this:
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="00:1a:ca:ff:ff:02", ATTR{type}=="1", NAME="tmfifo_net0", RUN+="/usr/sbin/ifup tmfifo_net0"
+
+reboot --force
+ip add
+
+ifconfig tmfifo_net0 192.168.100.1/24 up
+ifconfig enp1s0f0 192.168.0.20 up
+ifconfig enp1s0f1 192.168.0.21 up
+
+--------Loading the Ubuntu image to the Bluefield--------
+cat Ubuntu18.04.3-MLNX_OFED_LINUX-UPSTREAM-LIBS-5.0-2.1.8.0.1-aarch64.bfb > /dev/rshim0/boot
+
+sudo systemctl enable rshim
+sudo systemctl start rshim
+
+ping test:
+ping -I tmfifo_net0 192.168.100.2 -c2
+
+ssh ubuntu@192.168.100.2
+Password: ubuntu
+
+--------WE'RE IN!--------
+--------Fixing internet access--------
+On the HOST:
+echo "1" > /proc/sys/net/ipv4/ip_forward
+iptables -A INPUT -i eth0 -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables --table nat --append POSTROUTING --out-interface eth0 -j MASQUERADE
+iptables --append FORWARD --in-interface tmfifo_net0 -j ACCEPT
+iptables -A OUTPUT -j ACCEPT
+iptables -A FORWARD -i eth0 -o tmfifo_net0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+On the BLUEFIELD:
+ping 8.8.8.8
+vim /etc/resolv.conf
+nameserver 8.8.8.8
+sudo apt update -y && sudo apt upgrade -y
+
+--------Add cables (From now on we are on the Bluefield)--------
+mst start
+mst status -v
+mst cable add
+sudo mlxcables
+
+--------Check Mode (Embedded or Separated)--------
+mlxconfig -d /dev/mst/mt41682_pciconf0 q | grep -i internal_cpu_model
+
+--------Install DPDK--------
+apt-get install libc6-dev libpcap0.8 libpcap0.8-dev libpcap-dev meson ninja-build
+cd /home/ubuntu
+wget https://fast.dpdk.org/rel/dpdk-20.11.1.tar.xz
+tar -xJvf dpdk-20.11.1.tar.xz
+cd dpdk-stable-20.11.1
+
+export RTE_SDK=/home/ubuntu/dpdk-stable-20.11.1
+export RTE_TARGET=arm64-armv8-linuxapp-gcc
+
+cd /home/ubuntu
+wget https://github.com/mesonbuild/meson/releases/download/0.58.0/meson-0.58.0.tar.gz
+tar xzvf meson-0.58.0.tar.gz
+cd meson-0.58.0
+apt install -y python3-pip
+pip3 install setuptools
+python3 setup.py install
+cd ../dpdk-stable-20.11.1
+../meson-0.58.0/meson.py -Dexamples=all build
+ninja -C build
+ninja -C build install
+
+--------Install PKTGEN--------
+git clone git://dpdk.org/apps/pktgen-dpdk
+cd pktgen-dpdk/
+vim /usr/local/include/rte_spinlock.h
+vim /usr/local/include/rte_atomic_32.h
+
+Uncomment these 3 lines in both header files:
+#ifndef RTE_FORCE_INTRINSICS
+#  error Platform must be built with RTE_FORCE_INTRINSICS
+#endif
+
+make
+echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
+
+This should compile successfully
+Now we need to fix hugepages
+
+grep -i huge /boot/config-5.0.0-1003-bluefield 
+
+These should be y:
+CONFIG_HUGETLBFS=y
+CONFIG_HUGETLB_PAGE=y
+
+vim /etc/sysctl.conf
+Add to the bottom:
+vm.nr_hugepages=256
+
+vim /etc/fstab
+Add to the bottom of the file:
+huge /mnt/huge hugetlbfs defaults 0 0
+
+sudo mkdir /mnt/huge
+sudo chmod 777 /mnt/huge
+sudo reboot --force
+
+cd pktgen-dpdk/Builddir/
+./app/pktgen -l 0-4 -n 3 -- -P -m "[1:3].0, [2:4].1"
