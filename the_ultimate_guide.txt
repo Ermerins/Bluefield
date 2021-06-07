@@ -38,6 +38,10 @@ add this:
 SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="00:1a:ca:ff:ff:02", ATTR{type}=="1", NAME="tmfifo_net0", RUN+="/usr/sbin/ifup tmfifo_net0"
 
 reboot --force
+
+sudo modprobe rshim_usb
+sudo modprobe rshim_net
+
 ip add
 
 ifconfig tmfifo_net0 192.168.100.1/24 up
