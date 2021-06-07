@@ -1,6 +1,11 @@
 #!/bin/bash
 
 echo "Part 3"
+sudo modprobe rshim_usb
+sudo modprobe rshim_net
+
+ip add
+
 ifconfig tmfifo_net0 192.168.100.1/24 up
 ifconfig enp1s0f0 192.168.0.20 up
 ifconfig enp1s0f1 192.168.0.21 up
