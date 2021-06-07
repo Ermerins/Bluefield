@@ -86,7 +86,7 @@ sudo mlxcables
 mlxconfig -d /dev/mst/mt41682_pciconf0 q | grep -i internal_cpu_model
 
 --------Install DPDK--------
-apt update -y && apt upgrade -y
+apt update -y && apt upgrade -y && apt autoremove -y
 apt-get install libc6-dev libpcap0.8 libpcap0.8-dev libpcap-dev meson ninja-build
 cd /home/ubuntu
 wget https://fast.dpdk.org/rel/dpdk-20.11.1.tar.xz
