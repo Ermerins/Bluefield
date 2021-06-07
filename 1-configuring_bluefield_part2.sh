@@ -23,3 +23,5 @@ sudo modprobe rshim_usb
 sudo modprobe rshim_net
 
 echo 'SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="00:1a:ca:ff:ff:02", ATTR{type}=="1", NAME="tmfifo_net0", RUN+="/usr/sbin/ifup tmfifo_net0"' >> /etc/udev/rules.d/91-tmfifo_net.rules
+
+reboot --force
